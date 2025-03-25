@@ -49,9 +49,8 @@ def hospitality_reviews_taskflow_api_etl():
 
         df["Negative_Review"] = df["Negative_Review"].apply(clean_reviews)
         df["Positive_Review"] = df["Positive_Review"].apply(clean_reviews)
-        df["Review"] = df["Negative_Review"] + " " + df["Positive_Review"]
 
-        df.drop(axis=1, columns=["Negative_Review", "Positive_Review", "Review_Total_Negative_Word_Counts", "Review_Total_Positive_Word_Counts", "days_since_review"], inplace=True)
+        df.drop(axis=1, columns=["Review_Total_Negative_Word_Counts", "Review_Total_Positive_Word_Counts", "days_since_review"], inplace=True)
         df.to_csv(dataset_path, index=False)
         
         return dataset_path

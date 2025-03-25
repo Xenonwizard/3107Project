@@ -4,6 +4,7 @@ from airflow.operators.python import PythonOperator
 from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
 from webscraper.BookingReviewSpider import BookingReviewSpider
+from datetime import datetime
 import os
 import pandas as pd
 import pendulum
@@ -11,6 +12,10 @@ import requests
 import xml.etree.ElementTree as ET
 import gzip
 import json
+import re
+import string
+import dateparser
+
 
 @dag(dag_id="webscraper_taskflow", start_date=pendulum.datetime(2025, 1, 1), schedule="@daily", catchup=False, tags=["project"])
 def webscraper_taskflow_api():
@@ -21,7 +26,7 @@ def webscraper_taskflow_api():
         if response.status_code == 200:
             root = ET.fromstring(response.content)
             gz_urls = [loc.text for loc in root.findall(".//{http://www.sitemaps.org/schemas/sitemap/0.9}loc")]
-            # Take only the first .gz file for simplicity
+            # ! Remove slice to scrape all reviws in the sitemap
             return gz_urls[0:1]
         else:
             print(f"Failed to fetch sitemap: {response.status_code}")
@@ -56,6 +61,7 @@ def webscraper_taskflow_api():
         
         file_path = "/tmp/review_urls.json"
         with open(file_path, "w") as f:
+            # ! Remove slice to scrape reviews of all hotels in the gz files
             json.dump(all_review_urls[0:1], f)
         return file_path
     
@@ -64,14 +70,14 @@ def webscraper_taskflow_api():
         # Configure Scrapy with custom settings
         settings = get_project_settings()
         settings.update({
-            'FEEDS': {
-                '/tmp/scraped_reviews.json': {
-                    'format': 'json',
-                    'encoding': 'utf8',
-                    'overwrite': True
+            "FEEDS": {
+                "/tmp/scraped_reviews.json": {
+                    "format": "json",
+                    "encoding": "utf8",
+                    "overwrite": True
                 }
             },
-            'LOG_ENABLED': False
+            "LOG_ENABLED": False
         })
         
         # Configure spider with input file
@@ -81,13 +87,95 @@ def webscraper_taskflow_api():
             input_file=json_path
         )
         process.start()
+
+        os.remove(json_path)
+        return "/tmp/scraped_reviews.json"
+    
+    def clean_text(text, use_lower):
+        if not isinstance(text, str):
+            return text  # Return as is if it's not a string
         
-        return '/tmp/scraped_reviews.json'
+        # Remove Unicode characters (non-ASCII)
+        text = re.sub(r'[^\x00-\x7F]+', '', text)
+        
+        translator = str.maketrans('', '', string.punctuation)
+        text = text.translate(translator)
+        
+        if use_lower:
+            text = text.lower()
+        
+        return text
+    
+    def clean_score(score):
+        if not isinstance(score, str):
+            return score
+        
+        cleaned_score = re.sub(r'[\n]', '', score).replace(',', '.')
+        return cleaned_score
+    
+
+    def clean_review_date(date_str):
+        cleaned_date = date_str.strip()
+
+        parsed_date = dateparser.parse(
+            cleaned_date,
+            settings={
+                'PREFER_DAY_OF_MONTH': 'first',
+                'STRICT_PARSING': True,
+                'NORMALIZE': True
+            },
+            languages=['es', 'en']
+        )
+                
+        if parsed_date:
+            return parsed_date.strftime('%Y-%m-%d')
+        else:
+            return "None"
+    
+    @task
+    def clean_data(reviews_path: str):
+        df = pd.read_json(reviews_path)
+
+        for column in df.columns:
+            if column in ["Negative_Review", "Positive_Review"]:
+                df[column] = df[column].apply(clean_text, use_lower=True)
+            elif column in ["Average_Score", "Reviewer_Score"]:
+                df[column] = df[column].apply(clean_score)
+            elif column == "Review_Date":
+                df[column] = df[column].apply(clean_review_date)
+            else:
+                df[column] = df[column].apply(clean_text, use_lower=False)
+
+        df.to_csv("/tmp/scraped_reviews.csv", index=False)
+        os.remove(reviews_path)
+
+        return reviews_path.split(".json")[0] + ".csv"
+    
+    @task
+    def load_data(dataset_path: str, bucket_name: str):    
+
+        timestamp = datetime.now().strftime("%Y%m%d")
+        file_name = dataset_path.split("/")[-1]
+        timestamped_file_name = f"{timestamp}_{file_name.split('.')[0]}.csv"
+
+        upload_to_gcs = LocalFilesystemToGCSOperator(
+            task_id="upload_file_to_gcs",
+            src=dataset_path,
+            dst=timestamped_file_name,
+            bucket=bucket_name,
+            gcp_conn_id="google_cloud_default",
+        )
+    
+        upload_to_gcs.execute(context={})
+        os.remove(dataset_path)
 
     gz_urls = extract_sitemap("https://www.booking.com/sitembk-hotel-review-index.xml")
     reviews_json_path = download_gz_files(gz_urls)
-    # Perform scraping for each URL in the JSON file
-    run_scrapy_spider(reviews_json_path)
+    scraped_reviews_json_path = run_scrapy_spider(reviews_json_path)
+    scraped_reviews_json_path = clean_data(scraped_reviews_json_path)
+
+    # bucket_name = "is3107_hospitality_reviews_bucket"
+    # load_data(scraped_reviews_json_path, bucket_name)
 
 
 project_etl_dag = webscraper_taskflow_api()
