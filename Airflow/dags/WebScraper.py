@@ -1,8 +1,10 @@
 from airflow.decorators import dag, task
 from airflow.providers.google.cloud.transfers.local_to_gcs import LocalFilesystemToGCSOperator
+from airflow.operators.python import get_current_context
 from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
 from webscraper.BookingReviewSpider import BookingReviewSpider
+from dateutil.relativedelta import relativedelta
 import xml.etree.ElementTree as ET
 import pandas as pd
 from datetime import datetime
@@ -15,7 +17,7 @@ import re
 import string
 import dateparser
 
-@dag(dag_id="webscraper_taskflow", start_date=pendulum.datetime(2025, 1, 1), schedule="@daily", catchup=False, tags=["project"])
+@dag(dag_id="webscraper_taskflow", start_date=pendulum.datetime(2025, 1, 1), schedule="@monthly", catchup=False, tags=["project"])
 def webscraper_taskflow_api():
     @task
     def extract_sitemap(sitemap_url: str):
@@ -64,7 +66,14 @@ def webscraper_taskflow_api():
         return file_path
     
     @task
-    def run_scrapy_spider(json_path: str):
+    def run_scrapy_spider(json_path: str, ignore_months=False):
+        context = get_current_context()
+        execution_date = context["execution_date"]
+        
+        # Calculate previous month's start/end dates
+        prev_month_end = execution_date.replace(day=1) - relativedelta(days=1)
+        prev_month_start = prev_month_end.replace(day=1)
+
         # Configure Scrapy with custom settings
         settings = get_project_settings()        
         settings.update({
@@ -93,11 +102,13 @@ def webscraper_taskflow_api():
             "LOG_ENABLED": False
         })
         
-        # Configure spider with input file
         process = CrawlerProcess(settings)
         process.crawl(
             BookingReviewSpider,
-            input_file=json_path
+            input_file=json_path,
+            ignore_months=ignore_months,
+            prev_month_start=prev_month_start.date(),
+            prev_month_end=prev_month_end.date()
         )
         process.start()
 
@@ -138,7 +149,7 @@ def webscraper_taskflow_api():
             return None
     
     @task
-    def clean_data(reviews_path: str):
+    def clean_data(reviews_path: str, only_current_date=True):
         df = pd.read_json(reviews_path)
 
         for column in df.columns:
@@ -178,7 +189,8 @@ def webscraper_taskflow_api():
 
     gz_urls = extract_sitemap("https://www.booking.com/sitembk-hotel-review-index.xml")
     reviews_json_path = download_gz_files(gz_urls)
-    scraped_reviews_json_path = run_scrapy_spider(reviews_json_path)
+    # ! Remove ignore_months when scraping on a monthly basis (Currently it will ignore the month requirement)
+    scraped_reviews_json_path = run_scrapy_spider(reviews_json_path, ignore_months=True)
     scraped_reviews_json_path = clean_data(scraped_reviews_json_path)
 
     bucket_name = "is3107_hospitality_reviews_bucket"
