@@ -1,21 +1,19 @@
 from airflow.decorators import dag, task
 from airflow.providers.google.cloud.transfers.local_to_gcs import LocalFilesystemToGCSOperator
-from airflow.operators.python import PythonOperator
 from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
 from webscraper.BookingReviewSpider import BookingReviewSpider
+import xml.etree.ElementTree as ET
+import pandas as pd
 from datetime import datetime
 import os
-import pandas as pd
 import pendulum
 import requests
-import xml.etree.ElementTree as ET
 import gzip
 import json
 import re
 import string
 import dateparser
-
 
 @dag(dag_id="webscraper_taskflow", start_date=pendulum.datetime(2025, 1, 1), schedule="@daily", catchup=False, tags=["project"])
 def webscraper_taskflow_api():
@@ -26,8 +24,8 @@ def webscraper_taskflow_api():
         if response.status_code == 200:
             root = ET.fromstring(response.content)
             gz_urls = [loc.text for loc in root.findall(".//{http://www.sitemaps.org/schemas/sitemap/0.9}loc")]
-            # ! Remove slice to scrape all reviws in the sitemap
-            return gz_urls[0:1]
+            # Only scraping from English reviews
+            return gz_urls[60:81]
         else:
             print(f"Failed to fetch sitemap: {response.status_code}")
             return []
@@ -68,8 +66,23 @@ def webscraper_taskflow_api():
     @task
     def run_scrapy_spider(json_path: str):
         # Configure Scrapy with custom settings
-        settings = get_project_settings()
+        settings = get_project_settings()        
         settings.update({
+            # Essential anti-overload configuration
+            "AUTOTHROTTLE_ENABLED": True,
+            "AUTOTHROTTLE_START_DELAY": 2,  # Initial delay in seconds
+            "AUTOTHROTTLE_MAX_DELAY": 10,    # Maximum delay threshold
+            "AUTOTHROTTLE_TARGET_CONCURRENCY": 1.5,
+            "CONCURRENT_REQUESTS": 16,       # Total parallel requests
+            "CONCURRENT_REQUESTS_PER_DOMAIN": 4,
+            "DOWNLOAD_DELAY": 0.5,           # Base delay between requests
+
+            # Additional protections
+            "ROBOTSTXT_OBEY": True,
+            "RETRY_ENABLED": True,
+            "RETRY_TIMES": 2,
+            "RETRY_HTTP_CODES": [500, 502, 503, 504, 429],
+            
             "FEEDS": {
                 "/tmp/scraped_reviews.json": {
                     "format": "json",
@@ -115,22 +128,14 @@ def webscraper_taskflow_api():
     
 
     def clean_review_date(date_str):
-        cleaned_date = date_str.strip()
-
-        parsed_date = dateparser.parse(
-            cleaned_date,
-            settings={
-                'PREFER_DAY_OF_MONTH': 'first',
-                'STRICT_PARSING': True,
-                'NORMALIZE': True
-            },
-            languages=['es', 'en']
-        )
-                
+        cleaned_date = date_str.replace("Reviewed:", "").strip()
+        
+        parsed_date = dateparser.parse(cleaned_date)
+        
         if parsed_date:
             return parsed_date.strftime('%Y-%m-%d')
         else:
-            return "None"
+            return None
     
     @task
     def clean_data(reviews_path: str):
@@ -145,6 +150,8 @@ def webscraper_taskflow_api():
                 df[column] = df[column].apply(clean_review_date)
             else:
                 df[column] = df[column].apply(clean_text, use_lower=False)
+        
+        df.dropna(subset=["Negative_Review", "Positive_Review"], inplace=True)
 
         df.to_csv("/tmp/scraped_reviews.csv", index=False)
         os.remove(reviews_path)
@@ -174,8 +181,8 @@ def webscraper_taskflow_api():
     scraped_reviews_json_path = run_scrapy_spider(reviews_json_path)
     scraped_reviews_json_path = clean_data(scraped_reviews_json_path)
 
-    # bucket_name = "is3107_hospitality_reviews_bucket"
-    # load_data(scraped_reviews_json_path, bucket_name)
+    bucket_name = "is3107_hospitality_reviews_bucket"
+    load_data(scraped_reviews_json_path, bucket_name)
 
 
 project_etl_dag = webscraper_taskflow_api()

@@ -1,8 +1,8 @@
 from airflow.decorators import dag, task
 from airflow.providers.google.cloud.transfers.local_to_gcs import LocalFilesystemToGCSOperator
 from kaggle.api.kaggle_api_extended import KaggleApi
-import os
 import pandas as pd
+import os
 import pendulum
 import re
 import shutil
