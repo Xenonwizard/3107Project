@@ -25,9 +25,9 @@ def webscraper_taskflow_api():
 
         if response.status_code == 200:
             root = ET.fromstring(response.content)
-            gz_urls = [loc.text for loc in root.findall(".//{http://www.sitemaps.org/schemas/sitemap/0.9}loc")]
             # Only scraping from English reviews
-            return gz_urls[60:81]
+            gz_urls = [loc.text for loc in root.findall(".//{http://www.sitemaps.org/schemas/sitemap/0.9}loc") if "en-us" in loc.text]
+            return gz_urls
         else:
             print(f"Failed to fetch sitemap: {response.status_code}")
             return []
@@ -62,7 +62,7 @@ def webscraper_taskflow_api():
         file_path = "/tmp/review_urls.json"
         with open(file_path, "w") as f:
             # ! Remove slice to scrape reviews of all hotels in the gz files
-            json.dump(all_review_urls[0:1], f)
+            json.dump(all_review_urls[0:20], f)
         return file_path
     
     @task
@@ -84,7 +84,7 @@ def webscraper_taskflow_api():
             "AUTOTHROTTLE_TARGET_CONCURRENCY": 1.5,
             "CONCURRENT_REQUESTS": 16,       # Total parallel requests
             "CONCURRENT_REQUESTS_PER_DOMAIN": 4,
-            "DOWNLOAD_DELAY": 0.5,           # Base delay between requests
+            "DOWNLOAD_DELAY": 1,           # Base delay between requests
 
             # Additional protections
             "ROBOTSTXT_OBEY": True,
