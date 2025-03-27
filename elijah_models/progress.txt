@@ -1,0 +1,16 @@
+To Do:
+1. Now I need to check the difference 
+between preprocessing and non processed dataset
+
+    - talk about how each preprocessing step might affect the dataset
+    - how balancing the data works.
+
+2. deeper analysis on why the bert model works so well
+
+3. try to reverse engineer it.
+
+Findings:
+Found that ChatGPT is very bad and producing good models
+Testing out unsupersived and supervised models
+Found a model that works very well
+Attention mapping on the classifier does not tell us enough
