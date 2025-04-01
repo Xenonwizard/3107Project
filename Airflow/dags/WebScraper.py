@@ -62,7 +62,7 @@ def webscraper_taskflow_api():
         file_path = "/tmp/review_urls.json"
         with open(file_path, "w") as f:
             # ! Remove slice to scrape reviews of all hotels in the gz files
-            json.dump(all_review_urls[0:20], f)
+            json.dump(all_review_urls[0:3000], f)
         return file_path
     
     @task
