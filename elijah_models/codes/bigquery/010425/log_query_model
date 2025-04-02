@@ -1,0 +1,11 @@
+CREATE OR REPLACE MODEL  `flowing-gasket-454406-k2.dataset1.logmodel`
+OPTIONS(
+  model_type='logistic_reg',
+  input_label_cols=['label']
+  
+) AS
+SELECT
+   text_,
+    label
+FROM
+  `flowing-gasket-454406-k2.dataset1.cleaned_reviews`;
