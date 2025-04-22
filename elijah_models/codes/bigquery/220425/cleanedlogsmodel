@@ -1,0 +1,15 @@
+CREATE OR REPLACE MODEL `flowing-gasket-454406-k2.cleaned_dataset.v2log_model`
+OPTIONS (
+  MODEL_TYPE = 'LOGISTIC_REG',
+  INPUT_LABEL_COLS = ['label'],
+  AUTO_CLASS_WEIGHTS = TRUE
+) AS
+SELECT
+  label,
+  -- Apply TF-IDF on the text field
+  --  ML.TF_IDF(SPLIT(text_, ' ')) OVER() AS tfidf_features
+  ML.TF_IDF(ML.NGRAMS(SPLIT(text_, ' '), [1,3])) OVER() AS tfidf_features
+FROM
+  `flowing-gasket-454406-k2.cleaned_dataset.clean_data_table`
+WHERE
+  label IS NOT NULL AND text_ IS NOT NULL;
