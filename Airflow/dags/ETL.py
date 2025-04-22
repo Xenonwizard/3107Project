@@ -26,6 +26,15 @@ def hospitality_reviews_taskflow_api_etl():
         return downloaded_files[0]
     
     @task
+    def remove_columns(dataset_path: str):
+        df = pd.read_csv(dataset_path)
+
+        # Remove columns that are not needed
+        df.drop(axis=1, columns=["Additional_Number_of_Scoring", "Total_Number_of_Reviews", "Total_Number_of_Reviews_Reviewer_Has_Given", "lat", "lng"], inplace=True)
+        df.to_csv(dataset_path, index=False)
+        return dataset_path
+    
+    @task
     def split_duplicates(dataset_path: str):
         df = pd.read_csv(dataset_path)
 
@@ -74,19 +83,21 @@ def hospitality_reviews_taskflow_api_etl():
         shutil.rmtree("/tmp/duplicated_dataset", ignore_errors=True)
     
     dataset_path = extract_data("jiashenliu/515k-hotel-reviews-data-in-europe")
+    dataset_path = remove_columns(dataset_path)
+
     # Dataset that contains duplicated reviews (Possibly use for training)
-    duplicates_path = split_duplicates(dataset_path)
+    # duplicates_path = split_duplicates(dataset_path)
+    # duplicates_path = clean_data.override(task_id="clean_duplicated_reviews")(duplicates_path)
 
     dataset_path = clean_data.override(task_id="clean_all_reviews")(dataset_path)
-    duplicates_path = clean_data.override(task_id="clean_duplicated_reviews")(duplicates_path)
 
     bucket_name = "is3107_hospitality_reviews_bucket"
     load_all_reviews = load_data.override(task_id="load_all_reviews")(dataset_path, bucket_name)
-    load_duplicated_reviews = load_data.override(task_id="load_duplicated_reviews")(duplicates_path, bucket_name)
+    # load_duplicated_reviews = load_data.override(task_id="load_duplicated_reviews")(duplicates_path, bucket_name)
     cleanup_task = cleanup()
 
     load_all_reviews >> cleanup_task
-    load_duplicated_reviews >> cleanup_task
+    # load_duplicated_reviews >> cleanup_task
 
 
 project_etl_dag = hospitality_reviews_taskflow_api_etl()

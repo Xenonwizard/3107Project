@@ -40,6 +40,7 @@ class BookingReviewSpider(scrapy.Spider):
                     "Average_Score": hotel_score,
                     "Review_Date": review.css("p.review_item_date::text").get(),
                     "Reviewer_Score": review.css("span.review-score-badge::text").get(),
+                    "Reviewer_Nationality": review.css("span.reviewer_country span[itemprop='name']::text").get(),
                     "Positive_Review": review.css("p.review_pos span[itemprop='reviewBody']::text").get(),
                     "Negative_Review": review.css("p.review_neg span[itemprop='reviewBody']::text").get(),
                     "Tags": cleaned_tags
