@@ -49,10 +49,14 @@ def webscraper_taskflow_api():
                 with gzip.open(temp_gz_file, "rb") as f:
                     xml_content = f.read()
 
-                # Parse XML content and extract review page URLs
-                root = ET.fromstring(xml_content)
-                review_urls = [url.text for url in root.findall(".//{http://www.sitemaps.org/schemas/sitemap/0.9}loc")]
-                all_review_urls.extend(review_urls)
+                try :
+                    # Parse XML content and extract review page URLs
+                    root = ET.fromstring(xml_content)
+                    review_urls = [url.text for url in root.findall(".//{http://www.sitemaps.org/schemas/sitemap/0.9}loc")]
+                    all_review_urls.extend(review_urls)
+                except ET.ParseError as e: 
+                    print(f"Failed to parse {gz_url}: {e}")
+                    continue
 
                 # Clean up temporary file
                 os.remove(temp_gz_file)
@@ -62,7 +66,7 @@ def webscraper_taskflow_api():
         file_path = "/tmp/review_urls.json"
         with open(file_path, "w") as f:
             # ! Remove slice to scrape reviews of all hotels in the gz files
-            json.dump(all_review_urls[0:3000], f)
+            json.dump(all_review_urls[0:100], f)
         return file_path
     
     @task
