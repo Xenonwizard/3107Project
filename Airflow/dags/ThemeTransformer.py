@@ -1,6 +1,6 @@
 from airflow.decorators import dag, task
 from airflow.providers.google.cloud.transfers.local_to_gcs import LocalFilesystemToGCSOperator
-from datetime import timedelta
+import datetime
 import pandas as pd
 import pendulum
 import re
@@ -10,7 +10,7 @@ from sklearn.feature_extraction.text import CountVectorizer
 default_args = {
     "owner": "airflow",
     "retries": 1,
-    "retry_delay": timedelta(minutes=5)
+    "retry_delay": datetime.timedelta(minutes=5)
 }
 
 @dag(
