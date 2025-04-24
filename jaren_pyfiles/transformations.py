@@ -46,6 +46,9 @@ theme_lexicon = {
     'late':         'Operational',
     'early':        'Operational',
     'delay':        'Operational',
+    'wifi':         'WiFi',
+    'internet':     'WiFi',
+    'connection':   'WiFi',
 }
 
 df = pd.read_csv('20250423_scraped_reviews.csv')
