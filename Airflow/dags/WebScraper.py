@@ -16,6 +16,9 @@ import json
 import re
 import string
 import dateparser
+import torch
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
+
 
 @dag(dag_id="webscraper_taskflow", start_date=pendulum.datetime(2025, 1, 1), schedule="@monthly", catchup=False, tags=["project"])
 def webscraper_taskflow_api():
@@ -49,10 +52,14 @@ def webscraper_taskflow_api():
                 with gzip.open(temp_gz_file, "rb") as f:
                     xml_content = f.read()
 
-                # Parse XML content and extract review page URLs
-                root = ET.fromstring(xml_content)
-                review_urls = [url.text for url in root.findall(".//{http://www.sitemaps.org/schemas/sitemap/0.9}loc")]
-                all_review_urls.extend(review_urls)
+                try :
+                    # Parse XML content and extract review page URLs
+                    root = ET.fromstring(xml_content)
+                    review_urls = [url.text for url in root.findall(".//{http://www.sitemaps.org/schemas/sitemap/0.9}loc")]
+                    all_review_urls.extend(review_urls)
+                except ET.ParseError as e: 
+                    print(f"Failed to parse {gz_url}: {e}")
+                    continue
 
                 # Clean up temporary file
                 os.remove(temp_gz_file)
@@ -62,7 +69,7 @@ def webscraper_taskflow_api():
         file_path = "/tmp/review_urls.json"
         with open(file_path, "w") as f:
             # ! Remove slice to scrape reviews of all hotels in the gz files
-            json.dump(all_review_urls[0:3000], f)
+            json.dump(all_review_urls[0:10], f)
         return file_path
     
     @task
@@ -84,7 +91,7 @@ def webscraper_taskflow_api():
             "AUTOTHROTTLE_TARGET_CONCURRENCY": 1.5,
             "CONCURRENT_REQUESTS": 16,       # Total parallel requests
             "CONCURRENT_REQUESTS_PER_DOMAIN": 4,
-            "DOWNLOAD_DELAY": 1,           # Base delay between requests
+            "DOWNLOAD_DELAY": 0.5,           # Base delay between requests
 
             # Additional protections
             "ROBOTSTXT_OBEY": True,
@@ -186,15 +193,104 @@ def webscraper_taskflow_api():
     
         upload_to_gcs.execute(context={})
         os.remove(dataset_path)
+    
+    @task
+    def label_reviews_with_huggingface(csv_path: str):
+
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print(f"Using device: {device}")
+
+        df = pd.read_csv(csv_path)
+
+        model_name = "zayuki/computer_generated_fake_review_detection"
+        tokenizer = AutoTokenizer.from_pretrained(model_name, token='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')
+        model = AutoModelForSequenceClassification.from_pretrained(
+            model_name,
+            from_tf=True,
+            torch_dtype=torch.float16 if device.type == "cuda" else None,
+            token='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'
+        ).to(device)
+
+        # try:
+        #     model = torch.compile(model)
+        # except Exception as e:
+        #     print("torch.compile not supported or error occurred:", e)
+
+        def classify_reviews_in_batches(text_list, batch_size=32, max_length=256):
+            all_preds = []
+            for i in range(0, len(text_list), batch_size):
+                batch_texts = text_list[i:i+batch_size]
+                inputs = tokenizer(batch_texts, return_tensors="pt", truncation=True, padding=True, max_length=max_length)
+                inputs = {k: v.to(device) for k, v in inputs.items()}
+                with torch.no_grad():
+                    outputs = model(**inputs)
+                    probs = torch.softmax(outputs.logits, dim=1)
+                    predicted_classes = torch.argmax(probs, dim=1).tolist()
+                all_preds.extend(predicted_classes)
+            return all_preds
+
+        empty_patterns = ["na", "none", "nil", "n", "no", "not", "none.", "no."]
+
+        # Positive reviews
+        positive_reviews = df["Positive_Review"].fillna("").tolist()
+        positive_filtered = [review for review in positive_reviews if review.strip().lower()]
+        positive_labels_filtered = classify_reviews_in_batches(positive_filtered)
+
+        df["Positive_Review_Label"] = None
+        filtered_idx_pos = [i for i, review in enumerate(positive_reviews) if review.strip().lower() not in empty_patterns]
+        for idx, label in zip(filtered_idx_pos, positive_labels_filtered):
+            df.at[idx, "Positive_Review_Label"] = label
+
+        # Negative reviews
+        negative_reviews = df["Negative_Review"].fillna("").tolist()
+        negative_filtered = [review for review in negative_reviews if review.strip().lower() not in empty_patterns]
+        negative_labels_filtered = classify_reviews_in_batches(negative_filtered)
+
+        df["Negative_Review_Label"] = None
+        filtered_idx_neg = [i for i, review in enumerate(negative_reviews) if review.strip().lower() not in empty_patterns]
+        for idx, label in zip(filtered_idx_neg, negative_labels_filtered):
+            df.at[idx, "Negative_Review_Label"] = label
+
+        labeled_path = "/opt/airflow/data/reviews_with_labels.csv"
+        df.to_csv(labeled_path, index=False)
+        print(f"Saved labeled reviews to {labeled_path}")
+        return labeled_path
+
+    @task
+    def clean_labeled_reviews(labeled_csv_path: str):
+
+        df = pd.read_csv(labeled_csv_path)
+
+        # Drop rows with missing labels
+        df = df.dropna(subset=["Positive_Review_Label", "Negative_Review_Label"], how="any")
+
+        # Drop rows with blank reviews
+        df = df[~(df["Positive_Review"].fillna("").str.strip() == "")]
+        df = df[~(df["Negative_Review"].fillna("").str.strip() == "")]
+
+        cleaned_path = "/opt/airflow/data/reviews_with_labels_cleaned.csv"
+        df.to_csv(cleaned_path, index=False)
+        print(f"Saved cleaned labeled reviews to {cleaned_path}")
+        return cleaned_path
+
+
 
     gz_urls = extract_sitemap("https://www.booking.com/sitembk-hotel-review-index.xml")
     reviews_json_path = download_gz_files(gz_urls)
     # ! Remove ignore_months when scraping on a monthly basis (Currently it will ignore the month requirement)
     scraped_reviews_json_path = run_scrapy_spider(reviews_json_path, ignore_months=True)
-    scraped_reviews_json_path = clean_data(scraped_reviews_json_path)
+    # scraped_reviews_json_path = clean_data(scraped_reviews_json_path)
+
+    # bucket_name = "is3107_hospitality_reviews_bucket"
+    # load_data(scraped_reviews_json_path, bucket_name)
+
+    scraped_reviews_csv_path = clean_data(scraped_reviews_json_path)
+
+    labeled_reviews_path = label_reviews_with_huggingface(scraped_reviews_csv_path)
+    cleaned_labeled_reviews_path = clean_labeled_reviews(labeled_reviews_path)
 
     bucket_name = "is3107_hospitality_reviews_bucket"
-    load_data(scraped_reviews_json_path, bucket_name)
-
+    load_data(cleaned_labeled_reviews_path, bucket_name)
 
 project_etl_dag = webscraper_taskflow_api()
