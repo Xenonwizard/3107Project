@@ -6,6 +6,9 @@ import pendulum
 import re
 from collections import defaultdict
 from sklearn.feature_extraction.text import CountVectorizer
+from wordcloud import WordCloud
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 default_args = {
     "owner": "airflow",
@@ -113,6 +116,104 @@ def review_theme_analysis_workflow():
         
         result.to_csv("/tmp/trend_influence_score.csv", index=False)
         return "/tmp/trend_influence_score.csv"
+    
+    @task
+    def generate_wordclouds(pos_terms: dict, neg_terms: dict):
+        def generate_wordcloud_from_dict(word_freq, output_path, color, title):
+            wordcloud = WordCloud(width=800, height=400, background_color='white',
+                                  colormap=color, max_words=100, prefer_horizontal=0.9).generate_from_frequencies(word_freq)
+            plt.figure(figsize=(10, 5))
+            plt.imshow(wordcloud, interpolation='bilinear')
+            plt.axis('off')
+            plt.title(title, fontsize=16)
+            plt.tight_layout()
+            plt.savefig(output_path, dpi=300, bbox_inches='tight')
+            plt.close()
+
+        generate_wordcloud_from_dict(
+            pos_terms,
+            "/tmp/top_positive_wordcloud.png",
+            color="Greens",
+            title="Top Positive Words Mentioned by Guests"
+        )
+
+        generate_wordcloud_from_dict(
+            neg_terms,
+            "/tmp/top_negative_wordcloud.png",
+            color="Reds",
+            title="Top Negative Words Mentioned by Guests"
+        )
+
+        return ["/tmp/top_positive_wordcloud.png", "/tmp/top_negative_wordcloud.png"]
+    
+    @task
+    def generate_sentiment_trend_plot(sentiment_trend_csv_path: str):
+        df = pd.read_csv(sentiment_trend_csv_path)
+        df["Month"] = pd.to_datetime(df["Month"]) 
+
+        themes = df.columns[1:]
+        n_themes = len(themes)
+
+        fig, axes = plt.subplots(nrows=3, ncols=4, figsize=(20, 12), sharex=True)
+        axes = axes.flatten()
+
+        for i, theme in enumerate(themes):
+            ax = axes[i]
+            ax.plot(df["Month"], df[theme], marker='o', color="#6A5ACD")
+            ax.axhline(0, color='gray', linestyle='--', linewidth=1)
+            ax.set_title(theme, fontsize=10)
+            ax.tick_params(axis='x', rotation=45)
+            ax.set_ylim(-1, 1)
+
+        # Remove empty subplots if any
+        for j in range(i + 1, len(axes)):
+            fig.delaxes(axes[j])
+
+        fig.suptitle("Sentiment Trends by Theme (Monthly)", fontsize=16)
+        fig.tight_layout(rect=[0, 0, 1, 0.96])
+
+        output_path = "/tmp/sentiment_trends_by_theme.png"
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        plt.close()
+
+        return output_path
+
+    @task
+    def generate_theme_influence_barplot(influence_csv_path: str):
+        df = pd.read_csv(influence_csv_path)
+        pos_df = df[['theme', 'pos_delta']].copy()
+        pos_df['Type'] = 'Positive'
+        pos_df.rename(columns={'pos_delta': 'Delta'}, inplace=True)
+        neg_df = df[['theme', 'neg_delta']].copy()
+        neg_df['Type'] = 'Negative'
+        neg_df.rename(columns={'neg_delta': 'Delta'}, inplace=True)
+        combined_df = pd.concat([pos_df, neg_df], axis=0)
+        combined_df['Delta'] = combined_df['Delta'].astype(float)
+        theme_order = df.set_index('theme')[['pos_delta', 'neg_delta']].apply(lambda x: abs(x)).sum(axis=1).sort_values().index.tolist()
+        
+        plt.figure(figsize=(10, 7))
+        sns.set_theme(style="whitegrid")
+
+        barplot = sns.barplot(
+            data=combined_df,
+            y='theme',
+            x='Delta',
+            hue='Type',
+            order=theme_order,
+            palette={'Positive': '#32CD32', 'Negative': '#FF6347'}
+        )
+
+        plt.axvline(0, color='gray', linewidth=1.2)
+        plt.title('Theme Influence on Guest Satisfaction Scores', fontsize=14, weight='bold')
+        plt.xlabel('Score Delta from Baseline')
+        plt.ylabel('Theme')
+        plt.legend(title='Mention Type', loc='lower right', frameon=True)
+        plt.tight_layout()
+        plt.savefig('/tmp/theme_influence_diverging_bar.png', dpi=300, bbox_inches='tight')
+        plt.close()
+
+        return '/tmp/theme_influence_diverging_bar.png'
+
 
     @task
     def load_data(dataset_path: str, bucket_name: str):    
@@ -151,7 +252,11 @@ def review_theme_analysis_workflow():
     top_neg_terms = top_negative_terms(data)
     sentiment_trend_csv_path = sentiment_trend(data, theme_lexicon)
     score_influence_csv_path = score_influence(data, theme_lexicon)
-    
+
+    wordcloud_paths = generate_wordclouds(top_pos_terms, top_neg_terms)
+    sentiment_trend_plot_path = generate_sentiment_trend_plot(sentiment_trend_csv_path)
+    theme_influence_plot_path = generate_theme_influence_barplot(score_influence_csv_path)
+
     bucket_name = "is3107_hospitality_reviews_bucket"
     load_data(sentiment_trend_csv_path, bucket_name)
     load_data(score_influence_csv_path, bucket_name)
