@@ -1,4 +1,4 @@
-CREATE OR REPLACE MODEL  `flowing-gasket-454406-k2.dataset1.automlmodel`
+CREATE OR REPLACE MODEL  `<PROJECT>.<DATASET>.automlmodel`
 OPTIONS(
   model_type='automl_classifier',
   input_label_cols=['label']
@@ -10,7 +10,7 @@ SELECT
 FROM (
    SELECT *,
          ROW_NUMBER() OVER (PARTITION BY label ORDER BY RAND()) AS row_num
-  FROM `flowing-gasket-454406-k2.dataset1.table1`
+  FROM `<PROJECT>.<DATASET>.table1`
 WHERE
   label IS NOT NULL AND text_ IS NOT NULL
 )

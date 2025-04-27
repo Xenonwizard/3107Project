@@ -5,8 +5,8 @@ import numpy as np
 
 # Load your fine-tuned model and tokenizer
 model_name = "zayuki/computer_generated_fake_review_detection"
-tokenizer = AutoTokenizer.from_pretrained(model_name, token='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')
-model = AutoModelForSequenceClassification.from_pretrained(model_name, from_tf=True, token='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')
+tokenizer = AutoTokenizer.from_pretrained(model_name, token='<TOKEN>')
+model = AutoModelForSequenceClassification.from_pretrained(model_name, from_tf=True, token='<TOKEN>')
 
 # Set label mapping based on your model's outputs
 class_names = ['OR', 'CG']  # 0: OR (original), 1: CG (computer-generated)

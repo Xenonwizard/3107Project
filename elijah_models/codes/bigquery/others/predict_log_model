@@ -1,12 +1,12 @@
 SELECT
   *
 FROM
-  ML.PREDICT(MODEL `flowing-gasket-454406-k2.dataset1.logmodel`,
+  ML.PREDICT(MODEL `<PROJECT>.<DATASET>.logmodel`,
     (
       SELECT
         text_
       FROM
-        `flowing-gasket-454406-k2.dataset1.table1`
+        `<PROJECT>.<DATASET>.table1`
       LIMIT 10  -- You can remove or adjust this
     )
   );

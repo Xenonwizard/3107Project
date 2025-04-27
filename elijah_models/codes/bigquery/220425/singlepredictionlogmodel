@@ -7,7 +7,7 @@ SELECT
   END AS adjusted_prediction
 FROM
   ML.PREDICT(
-    MODEL `flowing-gasket-454406-k2.cleaned_dataset.v2log_model`,
+    MODEL `<PROJECT>.<DATASET>.v2log_model`,
     (
       SELECT
         text_,

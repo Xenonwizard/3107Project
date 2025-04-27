@@ -1,4 +1,4 @@
-CREATE OR REPLACE MODEL `flowing-gasket-454406-k2.dirty_dataset.v2log_model`
+CREATE OR REPLACE MODEL `<PROJECT>.<DATASET>.v2log_model`
 OPTIONS (
   MODEL_TYPE = 'LOGISTIC_REG',
   INPUT_LABEL_COLS = ['label']
@@ -8,6 +8,6 @@ SELECT
   -- Apply TF-IDF on the text field
   ML.TF_IDF(SPLIT(text_, ' ')) OVER() AS tfidf_features
 FROM
-  `flowing-gasket-454406-k2.dirty_dataset.dirty dataset`
+  `<PROJECT>.<DATASET> dataset`
 WHERE
   label IS NOT NULL AND text_ IS NOT NULL;

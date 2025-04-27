@@ -16,8 +16,8 @@ df = df.head(10)
 
 # Load model and tokenizer
 model_name = "zayuki/computer_generated_fake_review_detection"
-tokenizer = AutoTokenizer.from_pretrained(model_name, token='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')
-model = AutoModelForSequenceClassification.from_pretrained(model_name, from_tf=True, token='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')
+tokenizer = AutoTokenizer.from_pretrained(model_name, token='<TOKEN>')
+model = AutoModelForSequenceClassification.from_pretrained(model_name, from_tf=True, token='<TOKEN>')
 
 # Define LIME prediction function
 class_names = ['OR', 'CG']

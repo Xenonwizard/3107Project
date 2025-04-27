@@ -1,4 +1,4 @@
-CREATE OR REPLACE MODEL  `flowing-gasket-454406-k2.dataset1.logmodel`
+CREATE OR REPLACE MODEL  `<PROJECT>.<DATASET>.logmodel`
 OPTIONS(
   model_type='logistic_reg',
   input_label_cols=['label']
@@ -8,4 +8,4 @@ SELECT
    text_,
     label
 FROM
-  `flowing-gasket-454406-k2.dataset1.cleaned_reviews`;
+  `<PROJECT>.<DATASET>.cleaned_reviews`;

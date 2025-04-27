@@ -8,8 +8,8 @@ df =df.head(5000)
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
 model_name = "zayuki/computer_generated_fake_review_detection"
-tokenizer = AutoTokenizer.from_pretrained(model_name, token='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')
-model = AutoModelForSequenceClassification.from_pretrained(model_name, from_tf=True, token='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')
+tokenizer = AutoTokenizer.from_pretrained(model_name, token='<TOKEN>')
+model = AutoModelForSequenceClassification.from_pretrained(model_name, from_tf=True, token='<TOKEN>')
 
 # Prediction function
 # def classify_review(text):

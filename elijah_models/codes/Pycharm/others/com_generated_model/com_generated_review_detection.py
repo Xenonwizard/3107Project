@@ -12,9 +12,9 @@ df = df.head(1000)
 
 # Load Hugging Face model & tokenizer
 model_name = "zayuki/computer_generated_fake_review_detection"
-tokenizer = AutoTokenizer.from_pretrained(model_name, use_auth_token='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')
+tokenizer = AutoTokenizer.from_pretrained(model_name, use_auth_token='<TOKEN>')
 model = AutoModelForSequenceClassification.from_pretrained(model_name,
-                                                           use_auth_token='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',
+                                                           use_auth_token='<TOKEN>',
                                                            output_attentions=True,
                                                            from_tf=True)
 
