@@ -1,0 +1,20 @@
+SELECT
+  *,
+  -- Apply custom threshold (0.5253) for OR class
+  CASE 
+    WHEN (SELECT prob FROM UNNEST(predicted_label_probs) WHERE label = 'OR') >= 0.1
+    THEN 'OR' ELSE 'CG' 
+  END AS adjusted_prediction
+FROM
+  ML.PREDICT(
+    MODEL `flowing-gasket-454406-k2.cleaned_dataset.v2log_model`,
+    (
+      SELECT
+        text_,
+        ML.TF_IDF(SPLIT(text_, ' ')) OVER () AS tfidf_features
+      FROM
+        (
+          SELECT 'They are the perfect touch for me and the only thing I wish they had a little more space.' AS text_
+        )
+    )
+  )
